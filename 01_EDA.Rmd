@@ -1,0 +1,297 @@
+---
+title: "01. EXPLORATORY ANALYSIS"
+author: "Gary Nguyen"
+params:
+  data_folder: /Users/nguyenh/Desktop/personal_projects/Health_Insurance_Marketplace/data
+output:
+  html_document:
+    df_print: paged
+---
+
+## 1. INITIAL SETTINGS
+
+Data descriptions:
+- Benefit Name: the name of the benefit (837 unique benefits)
+- Business Year: year (2014, 2015 and 2016)
+- CoinsInnTier1, CoinsInnTier2: coinsurance % for Tier 1 and 2, respectively
+- CoinsOutofNet
+- CopayInnTier1, CopayInnTier2
+- CopayOutofNet
+- EHBVarReason
+- Exclusions
+- Explanation
+- ImportDate
+- IsCovered
+- IsEHB
+- IsExclFromInnMOOP
+- IsExclFromOonMOOP
+- IsStateMandate
+- IsSubjToDedTier1, IsSubjToDedTier2
+- IssuerId, IssuerId2
+- LimitQty
+- LimitUnit
+- MinimumStay
+- PlanId
+- QuantLimitOnSvc
+- RowNumber
+- SourceName
+- StandardComponentId
+- StateCode, StateCode2
+- VersionNum
+
+```{r loading_libraries, echo = FALSE, message = FALSE, warning = FALSE, results = 'hide'}
+if(!require(ggplot2, quietly = TRUE)) install.packages('ggplot2')
+if(!require(readr, quietly = TRUE)) install.packages('readr')
+if(!require(dplyr, quietly = TRUE)) install.packages('dplyr')
+if(!require(choroplethr, quietly = TRUE)) install.packages('choroplethr')
+if(!require(extrafont, quietly = TRUE)) install.packages('extrafont')
+if(!require(extrafontdb, quietly = TRUE)) install.packages('extrafontdb')
+if(!require(RColorBrewer, quietly = TRUE)) install.packages('RColorBrewer')
+if(!require(maps, quietly = TRUE)) install.packages('maps')
+if(!require(scales, quietly = TRUE)) install.packages('scales')
+if(!require(mapproj, quietly = TRUE)) install.packages('mapproj')
+if(!require(ggthemes, quietly = TRUE)) install.packages('ggthemes')
+```
+
+```{r loading_packages, echo = FALSE, message = FALSE, warning = FALSE, results = 'hide'}
+pkg <- c("ggplot2",
+         "readr",
+         "dplyr",
+         "choroplethr",
+         "extrafont",
+         "extrafontdb",
+         "RColorBrewer",
+         "knitr",
+         "tidyr",
+         "stringr",
+         "lubridate",
+         "purrr",
+         "DT",
+         "tidytext",
+         "textstem",
+         "tm",
+         "splitstackshape",
+         "text2vec",
+         "reshape",
+         "readr",
+         "zoo",
+         "keras",
+         "ROCR",
+         "caret",
+         "maps",
+         "ggthemes",
+         "scales",
+         "mapproj")
+invisible(lapply(pkg, library, character.only = TRUE))
+options(warn=0)
+```
+
+```{r helper_data_states}
+states_abbr = c("AK", "AL", "AR", "AZ", "CA", "CO", "CT", "DC", "DE", "FL", "GA",
+                "HI", "IA", "ID", "IL", "IN", "KS", "KY", "LA", "MA", "MD", "ME",
+                "MI", "MN", "MO", "MS",  "MT", "NC", "ND", "NE", "NH", "NJ", "NM",
+                "NV", "NY", "OH", "OK", "OR", "PA", "PR", "RI", "SC", "SD", "TN",
+                "TX", "UT", "VA", "VT", "WA", "WI", "WV", "WY")
+                      
+states_full = c("alaska","alabama","arkansas","arizona","california","colorado",
+                "connecticut","district of columbia","delaware","florida","georgia",
+                "hawaii","iowa","idaho","illinois","indiana","kansas","kentucky",
+                "louisiana","massachusetts","maryland","maine","michigan","minnesota",
+                "missouri","mississippi","montana","north carolina","north dakota",
+                "nebraska","new hampshire","new jersey","new mexico","nevada",
+                "new york","ohio","oklahoma","oregon","pennsylvania","puerto rico",
+                "rhode island","south carolina","south dakota","tennessee","texas",
+                "utah","virginia","vermont","washington","wisconsin",
+                "west virginia","wyoming")
+
+names(states_full) <- states_abbr
+```
+
+```{r loading_data}
+data_file_path <- file.path(params$data_folder, "BenefitsCostSharing.csv")
+benefits_cost_sharing <- readr::read_csv(data_file_path)
+```
+
+## 2. LOOKING AT SOME BENEFITS {.tabset}
+
+### 2A. INFUSION THERAPY
+
+```{r}
+infusion_therapy <- benefits_cost_sharing %>% 
+  filter(BenefitName == "Infusion Therapy")
+
+infusion_therapy <- infusion_therapy %>% 
+  mutate(CoinsInnTier1_processed = as.integer(stringr::str_extract(CoinsInnTier1, "\\d+")),
+         CoinsInnTier1_processed = replace(CoinsInnTier1_processed, is.na(CoinsInnTier1_processed), 0),
+         CoinsInnTier1_processed = CoinsInnTier1_processed/100)
+```
+
+```{r q_plot}
+qplot(CoinsInnTier1_processed, 
+      data = infusion_therapy, 
+      geom = "bar", 
+      xlab = "Co-pay", 
+      ylab = "Number of Plans", 
+      main = "Health Insurers with Infusion Co-Pays") +
+  theme(text = element_text(size = 16, family = "Garamond"))
+```
+
+```{r}
+infusion_to_map <- infusion_therapy %>% 
+  group_by(StateCode) %>% 
+  summarize(value = mean(CoinsInnTier1_processed)) %>% 
+  mutate(region = if_else(StateCode %in% names(states_full), states_full[StateCode], StateCode))
+```
+
+```{r}
+choro <- infusion_to_map %>% 
+  StateChoropleth$new()
+choro$title = "Average CoPay for Infusion Services"
+choro$set_num_colors(1)
+myPalette <- colorRampPalette(brewer.pal(9, "Reds"))
+choro$ggplot_polygon = geom_polygon(aes(fill = value), color = NA)
+choro$ggplot_scale = scale_fill_gradientn(name = "CoPay", colours = myPalette(9))
+choro$render()
+```
+
+Looking at states with terrible co-pays
+
+```{r}
+x <- infusion_therapy %>% 
+  filter(BenefitName == "Infusion Therapy",
+         CoinsInnTier1_processed >= 0.5)
+qplot(BusinessYear,
+      data = x,
+      geom = "bar", 
+      fill = StateCode, 
+      xlab = "Business Year", 
+      ylab="Number of Plans", 
+      main = "Health Insurers with Infusion Co-Pays of 50% or more") + 
+theme(text = element_text(size = 8, family = "Garamond"))
+```
+
+
+### 2B. MENTAL HEALTH OFFICE VISITS ("Abortion for Which Public Funding is Prohibited")
+
+```{r}
+abortion <- benefits_cost_sharing %>% 
+  filter(BenefitName == "Abortion for Which Public Funding is Prohibited") %>% 
+  mutate(CoinsInnTier1_processed = as.integer(stringr::str_extract(CoinsInnTier1, "\\d+")),
+         CoinsInnTier1_processed = replace(CoinsInnTier1_processed, is.na(CoinsInnTier1_processed), 0),
+         CoinsInnTier1_processed = CoinsInnTier1_processed/100)
+
+abortion_to_map <- abortion %>% 
+  group_by(StateCode) %>% 
+  summarize(value = mean(CoinsInnTier1_processed)) %>% 
+  mutate(region = if_else(StateCode %in% names(states_full), states_full[StateCode], StateCode))
+```
+
+```{r}
+choro <- abortion_to_map %>% 
+  StateChoropleth$new()
+choro$title = "Average CoPay for Abortions"
+choro$set_num_colors(1)
+myPalette <- colorRampPalette(brewer.pal(9, "Reds"))
+choro$ggplot_polygon = geom_polygon(aes(fill = value), color = NA)
+choro$ggplot_scale = scale_fill_gradientn(name = "CoPay", colours = myPalette(9))
+choro$render()
+```
+
+```{r}
+x <- abortion %>% 
+  filter(BenefitName == "Abortion for Which Public Funding is Prohibited",
+         CoinsInnTier1_processed >= 0.1)
+qplot(BusinessYear,
+      data = x,
+      geom = "bar", 
+      fill = StateCode, 
+      xlab = "Business Year", 
+      ylab="Number of Plans", 
+      main = "Health Insurers with Abortion Co-Pays of 50% or more") + 
+theme(text = element_text(size = 8, family = "Garamond"))
+```
+
+## 3. LOOKING AT RATES {.tabset}
+
+```{r}
+rate_file_path <- file.path(params$data_folder, "Rate.csv")
+rate <- readr::read_csv(rate_file_path)
+
+plan_attribute_file_path <- file.path(params$data_folder, "PlanAttributes.csv")
+plan_attribute <- read.csv(plan_attribute_file_path)
+```
+
+```{r}
+rate_individual_2015 <- rate %>% 
+  filter(BusinessYear == "2015",
+         Age != "Family Option",
+         IndividualRate < "9000") %>% 
+  select(c(BusinessYear:IndividualTobaccoRate))
+```
+
+### 3A. NUMBER OF PLANS BY STATE
+
+```{r}
+to_map <- rate_individual_2015 %>% 
+  group_by(StateCode) %>%
+  summarize(num_carriers = length(unique(IssuerId)), 
+            num_plan_offered = length(unique(PlanId)),
+            mean_ind_rate = mean(IndividualRate),
+            median_ind_rate = median(IndividualRate)) %>%
+  arrange(desc(num_plan_offered))
+```
+
+```{r}
+to_map <- to_map %>% 
+  mutate(num_range_carriers = if_else(num_carriers < 15, "(0,15)", 
+                                      if_else(num_carriers >= 25, "[25,35)",
+                                              "[15,25)")))
+         
+a <- ggplot(to_map, aes(x = reorder(StateCode, num_plan_offered), y = num_plan_offered)) +
+  geom_bar(aes(fill = num_range_carriers), stat = "identity") + 
+  coord_flip() +
+  ggtitle("Carriers vs. Plans Available By State")+
+  labs(x = "State", y = "Plans Available")
+print(a)
+```
+
+### 3B. MEDIAN MONTHLY PREMIUM
+
+```{r}
+to_map$region <- tolower(state.name[match(to_map$StateCode, state.abb)])
+
+#load US map
+us_state_map = map_data('state')
+statename <- us_state_map %>% 
+  group_by(region) %>% 
+  summarise(long = mean(long), 
+            lat = mean(lat))
+
+mapdata <- left_join(to_map, 
+                     us_state_map, 
+                     by="region")
+
+p <- ggplot() + 
+  geom_polygon(data = mapdata, 
+               aes(x = long, y = lat, group = group, fill = mapdata$median_ind_rate), colour = "white") +
+  scale_fill_continuous(low = "thistle2", high = "darkred", guide = "colorbar") + 
+  theme_bw()+
+  labs(fill = "Median Premium $/mon", title = "Median Monthly Premium Distribution", x = "", y = "") +
+  scale_y_continuous(breaks = c()) + 
+  scale_x_continuous(breaks = c()) + 
+  theme(panel.border = element_blank()) +
+  geom_text(data = statename, aes(x = long, y = lat, label = region),  na.rm = T, size = 2) +
+  coord_map()
+
+print(p)
+```
+
+
+
+
+
+
+
+
+
+
