@@ -4,7 +4,7 @@ author: "Gary Nguyen"
 params:
   data_folder: /Users/nguyenh/Desktop/personal_projects/Health_Insurance_Marketplace/data
 output:
-  html_document:
+  output: rmarkdown::github_document
     df_print: paged
 ---
 
@@ -218,7 +218,7 @@ rate_file_path <- file.path(params$data_folder, "Rate.csv")
 rate <- readr::read_csv(rate_file_path)
 
 plan_attribute_file_path <- file.path(params$data_folder, "PlanAttributes.csv")
-plan_attribute <- read.csv(plan_attribute_file_path)
+plan_attribute <- readr::read_csv(plan_attribute_file_path)
 ```
 
 ```{r}
@@ -228,6 +228,27 @@ rate_individual_2015 <- rate %>%
          IndividualRate < "9000") %>% 
   select(c(BusinessYear:IndividualTobaccoRate))
 ```
+
+```{r}
+#first step is to pull 2015 Gold Silver Bronze ACA plans. 
+plan_attribute_processed <- plan_attribute %>% 
+  select(c(115, 104, 162, 166, 170)) %>% 
+  mutate(PlanId = substr(PlanId, 1, 14),
+         TEHBInnTier1IndividualMOOP = str_replace_all(TEHBInnTier1IndividualMOOP, ",", ""),
+         TEHBInnTier1IndividualMOOP = as.numeric(str_replace_all(TEHBInnTier1IndividualMOOP, "\\$", "")),
+         TEHBInnTier2IndividualMOOP = str_replace_all(TEHBInnTier2IndividualMOOP, ",", ""),
+         TEHBInnTier2IndividualMOOP = as.numeric(str_replace_all(TEHBInnTier2IndividualMOOP, "\\$", "")),
+         TEHBOutOfNetIndividualMOOP = str_replace_all(TEHBOutOfNetIndividualMOOP, ",", ""),
+         TEHBOutOfNetIndividualMOOP = as.numeric(str_replace_all(TEHBOutOfNetIndividualMOOP, "\\$", "")))
+
+#Finalize the benefit table to use in the matching process
+benefit_grouped <- plan_attribute_processed %>% 
+  group_by(PlanId, MetalLevel) %>%
+  summarise(innettier1moop = mean(TEHBInnTier1IndividualMOOP, na.rm = TRUE),
+            innettier2moop = mean(TEHBInnTier2IndividualMOOP, na.rm = TRUE),
+            outnetmoop = mean(TEHBOutOfNetIndividualMOOP, na.rm = TRUE))
+```
+
 
 ### 3A. NUMBER OF PLANS BY STATE
 
@@ -286,7 +307,7 @@ p <- ggplot() +
 print(p)
 ```
 
-
+### 3C. NUMBER OF PLANS BY STATE
 
 
 
